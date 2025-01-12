@@ -1,0 +1,9 @@
+*.exe
+*.o
+*.bin
+test.c
+Vk.h
+.vscode
+ATT.md
+Build
+CMD.md

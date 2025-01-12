@@ -1,0 +1,6 @@
+Build
+guard.c
+*.exe
+*.bin
+.vscode
+Att.md
