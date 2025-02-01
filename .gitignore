@@ -4,3 +4,4 @@ guard.c
 *.bin
 .vscode
 Att.md
+ldr*

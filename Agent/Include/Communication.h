@@ -21,116 +21,127 @@ typedef struct {
     BOOL    Endian;
 } PARSER, *PPARSER;
 
-BOOL WebTransferInit(
-    VOID
-);
+namespace Web {
 
-BOOL WebTransferSend(
-    _In_      PVOID   Data,
-    _In_      UINT64  Size,
-    _Out_opt_ PVOID  *RecvData,
-    _Out_opt_ UINT64 *RecvSize
-);
+    BOOL TransferInit(
+        VOID
+    );
 
-VOID PkgAddInt32( 
-    _In_ PPACKAGE Package, 
-    _In_ UINT32   dataInt 
-);
+    BOOL TransferSend(
+        _In_      PVOID   Data,
+        _In_      UINT64  Size,
+        _Out_opt_ PVOID  *RecvData,
+        _Out_opt_ UINT64 *RecvSize
+    );
 
-VOID PkgAddInt64( 
-    _In_ PPACKAGE Package, 
-    _In_ UINT64   dataInt 
-);
+}
 
-VOID PkgAddPad( 
-    _In_ PPACKAGE Package, 
-    _In_ PUCHAR   Data, 
-    _In_ SIZE_T   Size 
-);
+namespace Package {
 
-VOID PkgAddBytes( 
-    _In_ PPACKAGE Package, 
-    _In_ PUCHAR   Data, 
-    _In_ SIZE_T   Size 
-);
+    VOID AddInt32( 
+        _In_ PPACKAGE Package, 
+        _In_ UINT32   dataInt
+    );
 
-PPACKAGE PackageCreate( 
-    _In_ UINT32 CommandID 
-);
+    VOID AddInt64( 
+        _In_ PPACKAGE Package, 
+        _In_ UINT64   dataInt 
+    );
 
-PPACKAGE PackageNew( 
-    VOID
-);
+    VOID AddPad( 
+        _In_ PPACKAGE Package, 
+        _In_ PUCHAR   Data, 
+        _In_ SIZE_T   Size 
+    );
 
-VOID PackageDestroy( 
-    _In_ PPACKAGE Package 
-);
+    VOID AddBytes( 
+        _In_ PPACKAGE Package, 
+        _In_ PUCHAR   Data, 
+        _In_ SIZE_T   Size 
+    );
 
-BOOL PkgTransmit( 
-    _In_  PPACKAGE Package, 
-    _Out_ PVOID*   Response, 
-    _Out_ PUINT64  Size 
-);
+    PPACKAGE Create( 
+        _In_ UINT32 CommandID 
+    );
 
-VOID PkgTransmitError(
-    _In_ UINT32 ErrorCode,
-    _In_ PSTR   InputString,
-    _In_ BOOL   bNtStatus
-);
+    PPACKAGE New( 
+        VOID
+    );
 
-VOID PkgAddBool(
-    _Inout_ PPACKAGE Package,
-    _In_    BOOLEAN  Data
-);
+    VOID Destroy( 
+        _In_ PPACKAGE Package 
+    );
 
-VOID PkgAddString( 
-    _In_ PPACKAGE package, 
-    _In_ PCHAR    data 
-);
+    BOOL Transmit( 
+        _In_  PPACKAGE Package, 
+        _Out_ PVOID*   Response, 
+        _Out_ PSIZE_T  Size 
+    );
 
-VOID PkgAddWString( 
-    _In_ PPACKAGE package, 
-    _In_ PWCHAR   data 
-);
+    VOID TransmitError(
+        _In_ UINT32 ErrorCode,
+        _In_ PSTR   InputString
+    );
 
-VOID ParserNew( 
-    _In_ PPARSER parser, 
-    _In_ PVOID   Buffer, 
-    _In_ UINT32  size 
-);
+    VOID AddBool(
+        _Inout_ PPACKAGE Package,
+        _In_    BOOLEAN  Data
+    );
 
-INT ParserGetInt32( 
-    _In_ PPARSER parser 
-);
+    VOID AddString( 
+        _In_ PPACKAGE package, 
+        _In_ PCHAR    data 
+    );
 
-PCHAR ParserGetBytes( 
-    _In_ PPARSER parser, 
-    _In_ PUINT32 size 
-);
+    VOID AddWString( 
+        _In_ PPACKAGE package, 
+        _In_ PWCHAR   data 
+    );
 
-VOID ParserDestroy( 
-    _In_ PPARSER Parser 
-);
+}
 
-PCHAR ParserGetString( 
-    _In_ PPARSER parser, 
-    _In_ PUINT32 size 
-);
+namespace Parser {
 
-INT16 ParserGetInt16( 
-    _In_ PPARSER parser
-);
+    VOID New( 
+        _In_ PPARSER parser, 
+        _In_ PVOID   Buffer, 
+        _In_ UINT32  size 
+    );
 
-INT64 ParserGetInt64( 
-    _In_ PPARSER parser 
-);
+    INT GetInt32( 
+        _In_ PPARSER parser 
+    );
 
-BOOL ParserGetBool( 
-    _In_ PPARSER parser 
-);
+    PCHAR GetBytes( 
+        _In_ PPARSER parser, 
+        _In_ PUINT32 size 
+    );
 
-BYTE ParserGetByte( 
-    _In_ PPARSER parser 
-);
+    VOID Destroy ( 
+        _In_ PPARSER Parser 
+    );
+
+    PCHAR GetString( 
+        _In_ PPARSER parser, 
+        _In_ PUINT32 size 
+    );
+
+    INT16 GetInt16( 
+        _In_ PPARSER parser
+    );
+
+    INT64 GetInt64( 
+        _In_ PPARSER parser 
+    );
+
+    BOOL GetBool( 
+        _In_ PPARSER parser 
+    );
+
+    BYTE GetByte( 
+        _In_ PPARSER parser 
+    );
+
+}
 
 #endif // COMMUNICATION_H

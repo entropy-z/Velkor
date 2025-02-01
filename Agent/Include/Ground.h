@@ -36,7 +36,7 @@ namespace Ground {
         template< typename Ret, typename... Args >
         class CallWrapper {
         public:
-            D_SEC( C ) STATIC __forceinline Ret Call( ULONG ModuleHash, ULONG FunctionHash, Args... args ) {
+            D_SEC( B ) STATIC FORCE_INLINE Ret Call( ULONG ModuleHash, ULONG FunctionHash, Args... args ) {
                 
                 HMODULE Module = GetCachedModule( ModuleHash );
                 if ( !Module ) {
@@ -60,7 +60,7 @@ namespace Ground {
         };
 
         template< typename Ret, typename... Args >
-        D_SEC( C ) __forceinline Ret Call( ULONG ModuleHash, ULONG FunctionHash, Args... args ) {
+        D_SEC( B ) FORCE_INLINE Ret Call( ULONG ModuleHash, ULONG FunctionHash, Args... args ) {
             return CallWrapper< Ret, Args... >::Call( ModuleHash, FunctionHash, args... );
         }
     }
@@ -69,14 +69,16 @@ namespace Ground {
 
         HANDLE Open( UINT32 AccessRights, BOOL bInheritHandle, UINT32 ProcessId );
         BOOL   Kill( HANDLE ProcessHandle, UINT32 ExitCode );
-        BOOL   Create( PSTR Path, BOOL bInheritHandle, UINT32 Flags, PSTR CurrentDir, PROCESS_INFORMATION ProcessInf, UINT32 ParentProcId, BOOL BlockDlls ); 
+        BOOL   Create( PSTR Path, BOOL bInheritHandle, UINT32 Flags, PSTR CurrentDir, PPROCESS_INFORMATION ProcessInf, UINT32 ParentProcId, BOOL BlockDlls ); 
     }
 
     namespace Thread{
 
         HANDLE Create( SIZE_T StackSize, PVOID StartAddress, PVOID Parameter, ULONG Flags, PULONG ThreadIdPtr, HANDLE ProcessHandle = NtCurrentProcess() );
         HANDLE Open( ULONG AccessRights, BOOL bInheritHandle, ULONG ThreadId );
-        ULONG  Enum( VOID );
+        BOOL   Terminate( HANDLE ThreadHandle, ULONG ExitCode );
+        ULONG  Resume( HANDLE ThreadHandle );
+        ULONG  RndEnum( VOID );
     }
 
     namespace Token {
@@ -114,6 +116,7 @@ namespace Ground {
         SIZE_T CharToWChar( PWCHAR Dest, PCHAR Src, SIZE_T MaxAllowed );
         SIZE_T LengthA( LPCSTR String );
         SIZE_T LengthW( LPCWSTR String );
+        INT    CompareCountA( PCSTR Str1, PCSTR Str2, INT16 Count );
         INT    CompareA( LPCSTR Str1, LPCSTR Str2 );
         INT    CompareW( LPCWSTR Str1, LPCWSTR Str2 );
         void   ToUpperCaseChar(char* str);
@@ -125,6 +128,7 @@ namespace Ground {
         void   ConcatW( PWCHAR Dest, LPCWSTR Src );
         BOOL   IsStringEqual( LPCWSTR Str1, LPCWSTR Str2 );
         VOID   InitUnicode( PUNICODE_STRING UnicodeString, PWSTR Buffer );
+        PSTR   GenerateRndStr( ULONG StringSize );
     }
 
     namespace File {

